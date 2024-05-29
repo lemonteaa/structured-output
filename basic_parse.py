@@ -14,10 +14,28 @@ class SimpleNestedList(Enum):
     RIGHT_BRACKET = 3
     COMMA = 4
 
+class JSONToken(Enum):
+    NULL = 1
+    BOOL_T = 2
+    BOOL_F = 3
+    NUM = 4
+    STR = 5
+    LEFT_SQUARE_BRACKET = 6
+    RIGHT_SQUARE_BRACKET = 7
+    LEFT_CURLY_BRACKET = 6
+    RIGHT_CURLY_BRACKET = 7
+    COMMA = 10
+    COLON = 11
+
 class StackAction(Enum):
     NOOPS = 1
     PUSH = 2
     POP = 3
+
+@dataclass
+class CFG:
+    state_transition : any
+    pop_action : any
 
 # Push: lambda cur_data, token: (new_cur_data, stack_data)
 # (next_state, stack_action, return_state, visitor)
@@ -40,6 +58,8 @@ simple_nested_list_cfg = [
 def simple_nested_list_pop_action(cur_data, return_state, stack_data):
     return stack_data + [cur_data]
 
+simple_nested_list_grammar = CFG(simple_nested_list_cfg, simple_nested_list_pop_action)
+
 class PDA:
     def __init__(self):
         self.stack = []
@@ -47,8 +67,8 @@ class PDA:
         self.data = None
     def __str__(self):
         return f"Stack: {self.stack}\nState: {self.state}\nData: {self.data}\n"
-    def run_step(self, cfg, token : GrammarToken) -> bool:
-        m = cfg[self.state]
+    def run_step(self, cfg : CFG, token : GrammarToken) -> bool:
+        m = cfg.state_transition[self.state]
         if SimpleNestedList(token.type) not in m:
             raise ValueError(f"Invalid token: {token}")
         (next_state, stack_action, return_state, visitor) = m[SimpleNestedList(token.type)]
@@ -64,12 +84,12 @@ class PDA:
             if len(self.stack) == 0:
                 return True
             (return_state, stack_data) = self.stack.pop()
-            self.data = simple_nested_list_pop_action(self.data, return_state, stack_data)
+            self.data = cfg.pop_action(self.data, return_state, stack_data)
             self.state = return_state
             return False
         else:
             return False
-    def run_all(self, cfg, tokens, debug = False):
+    def run_all(self, cfg : CFG, tokens, debug = False):
         finished = False
         for t in tokens:
             finished = self.run_step(cfg, t)
@@ -128,6 +148,6 @@ test2a = [
 
 if __name__ == "__main__":
     pda = PDA()
-    print(pda.run_all(simple_nested_list_cfg, test1))
+    print(pda.run_all(simple_nested_list_grammar, test1))
     pda = PDA()
-    print(pda.run_all(simple_nested_list_cfg, test2a, debug=True))
+    print(pda.run_all(simple_nested_list_grammar, test2a, debug=True))
