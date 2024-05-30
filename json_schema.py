@@ -45,16 +45,43 @@ class Closeability(Enum):
     MUST_CLOSE = 3
     NA = 4
 
-json_obj_begin = set(JSONToken.NULL, JSONToken.BOOL_T, JSONToken.BOOL_F, JSONToken.NUM, JSONToken.STR, JSONToken.LEFT_CURLY_BRACKET, JSONToken.LEFT_SQUARE_BRACKET)
+json_obj_begin = set([JSONToken.NULL, JSONToken.BOOL_T, JSONToken.BOOL_F, JSONToken.NUM, JSONToken.STR, JSONToken.LEFT_CURLY_BRACKET, JSONToken.LEFT_SQUARE_BRACKET])
+
+jsontype_token_map = {
+    "null": [JSONToken.NULL],
+    "boolean": [JSONToken.BOOL_F, JSONToken.BOOL_T],
+    "number": [JSONToken.NUM],
+    "string": [JSONToken.STR],
+    "array": [JSONToken.LEFT_SQUARE_BRACKET],
+    "object": [JSONToken.LEFT_CURLY_BRACKET]
+}
 
 def derive_valid_object(schema_context_frame, cur_state):
-    pass #TODO
+    (schema, context) = schema_context_frame
+    # Start state
+    if cur_state == 0:
+        return jsontype_token_map[schema["type"]]
+    # List
+    if cur_state == 1:
+        return jsontype_token_map[schema["items"]["type"]]
+    # Object
+    if cur_state == 4:
+        cur_property = context["cur_property"]
+        return jsontype_token_map[schema["properties"][cur_property]["type"]]
 
 def derive_list_state(schema_context_frame):
-    pass #TODO
+    minItems = schema_context_frame[0]["minItems"]
+    maxItems = schema_context_frame[0]["maxItems"]
+    curItems = schema_context_frame[1]["curItems"]
+    if minItems is not None and curItems < minItems:
+        return Closeability.MUST_NOT_CLOSE
+    if maxItems is not None and curItems == maxItems:
+        return Closeability.MUST_CLOSE
+    return Closeability.MAY_CLOSE
 
 def derive_dict_state(schema_context_frame):
-    pass #TODO
+    #TODO (required prop => optional prop => exhausted prop)
+    return random.choice([Closeability.MAY_CLOSE, Closeability.MUST_CLOSE, Closeability.MUST_NOT_CLOSE])
 
 def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_context_frame, cur_state : int):
     filtered_tokens = set(next_token_candidates)
@@ -72,12 +99,12 @@ def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_conte
         closeability_status = derive_dict_state(schema_context_frame)
     # Filter the close brackets
     if closeability_status == Closeability.MUST_NOT_CLOSE:
-        filtered_tokens = filtered_tokens - set(JSONToken.RIGHT_CURLY_BRACKET, JSONToken.RIGHT_SQUARE_BRACKET)
+        filtered_tokens = filtered_tokens - set([JSONToken.RIGHT_CURLY_BRACKET, JSONToken.RIGHT_SQUARE_BRACKET])
     if closeability_status == Closeability.MUST_CLOSE:
         if cur_state in (1, 2):
-            filtered_tokens = set(JSONToken.RIGHT_SQUARE_BRACKET)
+            filtered_tokens = set([JSONToken.RIGHT_SQUARE_BRACKET])
         elif cur_state in (3, 5):
-            filtered_tokens = set(JSONToken.RIGHT_CURLY_BRACKET)
+            filtered_tokens = set([JSONToken.RIGHT_CURLY_BRACKET])
         else:
             raise ValueError("Internal error")
     #TODO gen dict key value exactly
@@ -140,5 +167,20 @@ product_schema1 = {
 if __name__ == "__main__":
     for i in range(5):
         print(random_json(random.randint(20, 120)))
-    for i in range(3):
-        print(gen_json_schema(product_schema1))
+    #for i in range(3):
+    #    print(gen_json_schema(product_schema1))
+    pda = PDA()
+    pda.state = 0
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1, None), 0))
+    pda.state = 3
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1, None), 3))
+    pda.state = 4
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1, {"cur_property": "name"}), 4))
+    pda.state = 4
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1, {"cur_property": "reviews"}), 4))
+    pda.state = 1
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1["properties"]["tags"], {"curItems": 3}), 1))
+    pda.state = 1
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1["properties"]["tags"], {"curItems": 2}), 1))
+    pda.state = 1
+    print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1["properties"]["tags"], {"curItems": 0}), 1))
