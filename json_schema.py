@@ -110,8 +110,42 @@ def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_conte
     #TODO gen dict key value exactly
     return list(filtered_tokens)
 
-def update_schema_context(schema_context, selected_token, cur_state):
+def init_list_context(schema_context):
+    schema = schema_context[-1][0]
+    schema_context[-1][1] = {}
+    if schema["minItems"] is not None:
+        schema_context[-1][1]["minItems"] = schema["minItems"]
+    if schema["maxItems"] is not None:
+        schema_context[-1][1]["maxItems"] = schema["maxItems"]
+    schema_context[-1][1]["curItems"] = 0
+
+def init_map_context(schema_context):
     pass
+
+#TODO prev state
+def update_schema_context(schema_context, selected_token, prev_state, cur_state):
+    # Descend to subobject
+    if selected_token.type == JSONToken.LEFT_SQUARE_BRACKET.value:
+        if prev_state == 1:
+            cur_schema = schema_context[-1][0]
+            sub_schema = cur_schema["items"]
+            schema_context.append((sub_schema, None))
+        init_list_context(schema_context)
+    if selected_token.type == JSONToken.LEFT_CURLY_BRACKET.value:
+        if prev_state == 4:
+            cur_schema = schema_context[-1][0]
+            cur_property = schema_context[-1][1]["cur_property"]
+            sub_schema = cur_schema["properties"][cur_property]
+            schema_context.append((sub_schema, None))
+        init_map_context(schema_context)
+    # Ascend
+    if selected_token.type in [JSONToken.RIGHT_CURLY_BRACKET.value, JSONToken.RIGHT_SQUARE_BRACKET.value]:
+        schema_context.pop()
+    # Update object state
+    if cur_state == 2:
+        schema_context[-1][1]["curItems"] += 1
+    if cur_state == 5:
+        advance_property_target(schema_context[-1][1])
 
 def gen_json_schema(schema):
     pda = PDA()
