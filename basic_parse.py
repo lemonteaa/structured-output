@@ -124,6 +124,8 @@ class PDA:
         self.data = None
     def __str__(self):
         return f"Stack: {self.stack}\nState: {self.state}\nData: {self.data}\n"
+    def get_valid_next_token(self, cfg : CFG):
+        return list(cfg.state_transition[self.state].keys())
     def run_step(self, cfg : CFG, token : GrammarToken) -> bool:
         m = cfg.state_transition[self.state]
         if cfg.token_class(token.type) not in m:
