@@ -1,3 +1,4 @@
+from typing import Optional
 from basic_parse import *
 
 import random
@@ -7,12 +8,18 @@ from util import *
 
 print("Random select")
 
-def gen_json_token(token_type : JSONToken) -> GrammarToken:
+def gen_json_token(token_type : JSONToken, constraint: Optional[dict]) -> GrammarToken:
     val = None
-    if token_type == JSONToken.NUM:
-        val = str(random.uniform(-100.0, +100.0))
-    if token_type == JSONToken.STR:
-        val = random_name()
+    if constraint is not None:
+        if constraint["type"] == 0:
+            val = constraint["value"]
+        else:
+            raise ValueError("Unknown constraint type")
+    else:
+        if token_type == JSONToken.NUM:
+            val = str(random.uniform(-100.0, +100.0))
+        if token_type == JSONToken.STR:
+            val = random_name()
     return GrammarToken(token_type.value, val)
 
 def complete_partial_json(cur_data, parse_stack):
@@ -107,8 +114,15 @@ def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_conte
             filtered_tokens = set([JSONToken.RIGHT_CURLY_BRACKET])
         else:
             raise ValueError("Internal error")
-    #TODO gen dict key value exactly
-    return list(filtered_tokens)
+    #DONE gen dict key value exactly
+    if cur_state == 3:
+        filtered_tokens = filtered_tokens - set([JSONToken.STR])
+        filtered_tokens = [(tok, None) for tok in filtered_tokens]
+        constraint = { "type": 0, "value": schema_context_frame[1]["cur_property"] }
+        filtered_tokens.append((JSONToken.STR, constraint))
+    else:
+        filtered_tokens = list(filtered_tokens)
+    return filtered_tokens
 
 def init_list_context(schema_context):
     schema = schema_context[-1][0]
@@ -157,7 +171,7 @@ def gen_json_schema(schema):
         # Filter by schema context
         valid_next_tokens = filter_token_by_schema(next_token_candidates, schema_context[-1], pda.state)
         # Random sample for now
-        random_token = gen_json_token(random.choice(valid_next_tokens))
+        random_token = gen_json_token(*random.choice(valid_next_tokens))
         # Update schema context
         update_schema_context(schema_context, random_token, pda.state)
         # Run PDA
