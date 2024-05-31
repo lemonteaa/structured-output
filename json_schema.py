@@ -13,6 +13,8 @@ def gen_json_token(token_type : JSONToken, constraint: Optional[dict]) -> Gramma
     if constraint is not None:
         if constraint["type"] == 0:
             val = constraint["value"]
+        elif constraint["type"] == 1:
+            val = random.choice(constraint["value"])
         else:
             raise ValueError("Unknown constraint type")
     else:
@@ -82,8 +84,15 @@ def derive_valid_object(schema_context_frame, cur_state):
         return jsontype_token_map[schema["properties"][cur_property]["type"]]
 
 def derive_list_state(schema_context_frame):
-    minItems = schema_context_frame[0]["minItems"]
-    maxItems = schema_context_frame[0]["maxItems"]
+    curSchema = schema_context_frame[0]
+    if "minItems" in curSchema.keys():
+        minItems = curSchema["minItems"]
+    else:
+        minItems = None
+    if "maxItems" in curSchema.keys():
+        maxItems = curSchema["maxItems"]
+    else:
+        maxItems = None
     curItems = schema_context_frame[1]["curItems"]
     if minItems is not None and curItems < minItems:
         return Closeability.MUST_NOT_CLOSE
@@ -103,6 +112,24 @@ def derive_dict_state(schema_context_frame):
         return Closeability.MUST_CLOSE
     else:
         raise ValueError("Unknown phase")
+
+def gen_key_list(schema_context_data):
+    select = schema_context_data["select"]
+    required_properties = schema_context_data["required_properties"]
+    optional_properties = schema_context_data["optional_properties"]
+    if select["phase"] == DictSelectPhase.REQUIRED:
+        return {
+            "type": 0,
+            "value": required_properties[select["i"]]
+        }
+    elif select["phase"] == DictSelectPhase.OPTIONAL:
+        available_propperties = set(optional_properties) - select["used"]
+        return {
+            "type": 1,
+            "value": list(available_propperties)
+        }
+    else:
+        raise ValueError("Shouldn't be exhausted here")
 
 def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_context_frame, cur_state : int):
     filtered_tokens = set(next_token_candidates)
@@ -132,7 +159,7 @@ def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_conte
     if cur_state == 3:
         filtered_tokens = filtered_tokens - set([JSONToken.STR])
         filtered_tokens = [(tok, None) for tok in filtered_tokens]
-        constraint = { "type": 0, "value": schema_context_frame[1]["cur_property"] }
+        constraint = gen_key_list(schema_context_frame[1])
         filtered_tokens.append((JSONToken.STR, constraint))
     else:
         filtered_tokens = [(tok, None) for tok in filtered_tokens]
@@ -140,10 +167,13 @@ def filter_token_by_schema(next_token_candidates : list[JSONToken], schema_conte
 
 def init_list_context(schema_context):
     schema = schema_context[-1][0]
-    schema_context[-1][1] = {}
-    if schema["minItems"] is not None:
+    schema_context[-1][1] = {
+        "minItems": None,
+        "maxItems": None
+    }
+    if "minItems" in schema.keys() and schema["minItems"] is not None:
         schema_context[-1][1]["minItems"] = schema["minItems"]
-    if schema["maxItems"] is not None:
+    if "maxItems" in schema.keys() and schema["maxItems"] is not None:
         schema_context[-1][1]["maxItems"] = schema["maxItems"]
     schema_context[-1][1]["curItems"] = 0
 
@@ -214,8 +244,21 @@ def update_schema_context(schema_context, selected_token, prev_state, cur_state)
             cur_schema = schema_context[-1][0]
             sub_schema = cur_schema["items"]
             schema_context.append([sub_schema, None])
+        if prev_state == 4:
+            cur_schema = schema_context[-1][0]
+            cur_property = schema_context[-1][1]["cur_property"]
+            sub_schema = cur_schema["properties"][cur_property]
+            #TODO
+            #print(cur_schema)
+            #print(cur_property)
+            #print(sub_schema)
+            schema_context.append([sub_schema, None])
         init_list_context(schema_context)
     if selected_token.type == JSONToken.LEFT_CURLY_BRACKET.value:
+        if prev_state == 1:
+            cur_schema = schema_context[-1][0]
+            sub_schema = cur_schema["items"]
+            schema_context.append([sub_schema, None])
         if prev_state == 4:
             cur_schema = schema_context[-1][0]
             cur_property = schema_context[-1][1]["cur_property"]
@@ -234,13 +277,19 @@ def update_schema_context(schema_context, selected_token, prev_state, cur_state)
     if cur_state == 6:
         schema_context[-1][1]["cur_property"] = selected_token.value
 
-def gen_json_schema(schema):
+def gen_json_schema(schema, debug=False):
     pda = PDA()
     finished = False
     init = True
     prev_state = None
     schema_context = [[schema, None]]
     while not finished:
+        if debug:
+            print(f"Schema Context len: {len(schema_context)}")
+            print(schema_context[-1])
+            if not init:
+                print(random_token)
+            print(f"Cur State: {pda.state}")
         if not init:
             # Update schema context
             update_schema_context(schema_context, random_token, prev_state, pda.state)
@@ -285,7 +334,7 @@ product_schema1 = {
         },
         "tags" : { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 3 }
     },
-    "required": ["id", "name", "details"]
+    "required": ["id", "name", "details", "reviews"]
 }
 
 
@@ -312,4 +361,4 @@ if __name__ == "__main__":
     print(filter_token_by_schema(pda.get_valid_next_token(json_grammar), (product_schema1["properties"]["tags"], {"curItems": 0}), 1))
     print("Test 3 - gen by JSON Schema")
     for i in range(3):
-        print(gen_json_schema(product_schema1))
+        print(gen_json_schema(product_schema1, debug=False))
