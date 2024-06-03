@@ -1,3 +1,5 @@
+import copy
+
 print("Lexer")
 
 class FSM:
@@ -26,3 +28,19 @@ class FSM:
                 break
         return (matched, accept)
 
+
+# Strategy 1 - everything brute force?
+def filter_token_compatibility_bruteforce(fsm, token_map):
+    result = {}
+    for token_id, s in token_map.items():
+        new_fsm = copy.copy(fsm)
+        success = True
+        accept = None
+        for c in s:
+            matched, accept = new_fsm.run_step(c)
+            if not matched:
+                success = False
+                break
+        if success:
+            result[token_id] = (new_fsm.state, accept)
+    return result
